@@ -65,6 +65,7 @@ WINDOW_NAME    = 'OpenLabeling'
 TRACKBAR_IMG   = 'Image'
 TRACKBAR_CLASS = 'Class'
 TRACKBAR_ENHANCER = 'Enhance'
+TRACKBAR_TRACKER = 'Track'
 
 annotation_formats = {'PASCAL_VOC' : '.xml', 'YOLO_darknet' : '.txt'}
 TRACKER_DIR = os.path.join(OUTPUT_DIR, '.tracker')
@@ -874,9 +875,13 @@ def json_file_add_object(frame_data_dict, img_path, anchor_id, pred_counter, obj
 
 
 def set_enhancer():
-    text = 'image is enhancer'
+    text = 'image enhancer is ON'
     display_text(text, 1000)
 
+
+def set_Tracker():
+    text = 'Tracker is ON'
+    display_text(text, 1000)
 
 class LabelTracker():
     ''' Special thanks to Rafael Caballero Gonzalez '''
@@ -986,7 +991,8 @@ def complement_bgr(color):
     return tuple(k - u for u in color)
 
 
-def auto_labeling(pre_tmp, cur_tmp, pre_bbox, hei, wid):
+
+def auto_labeling(tracker, pre_tmp, cur_tmp, pre_bbox, hei, wid):
     print('in tracker!')
     if TRACKER_TYPE == 'BOOSTING':
         tracker = cv2.TrackerBoosting_create()
@@ -1111,11 +1117,17 @@ if __name__ == '__main__':
     if last_class_index != 0:
         cv2.createTrackbar(TRACKBAR_CLASS, WINDOW_NAME, 0, last_class_index, set_class_index)
 
-    # grayscale
+    # enhancer
     enhancer_on = 1
     enhancer_off = 0
     cv2.createTrackbar(TRACKBAR_ENHANCER, WINDOW_NAME,
                     enhancer_off, enhancer_on, set_enhancer)
+    
+    # Tracker
+    tracker_on = 1
+    tracker_off = 0
+    cv2.createTrackbar(TRACKBAR_TRACKER, WINDOW_NAME,
+                    tracker_off, tracker_on, set_Tracker)
 
     # initialize
     set_img_index(0)
@@ -1133,9 +1145,12 @@ if __name__ == '__main__':
         tmp_img = img.copy()
         height, width = tmp_img.shape[:2]
 
+        to_track = cv2.getTrackbarPos(TRACKBAR_TRACKER, WINDOW_NAME)
         to_enhance = cv2.getTrackbarPos(TRACKBAR_ENHANCER, WINDOW_NAME)
         if to_enhance == 1:
             tmp_img = enhance_img(tmp_img)
+            display_text('image is enhanced', 1000)
+
 
         if edges_on == True:
             # draw edges
@@ -1158,11 +1173,15 @@ if __name__ == '__main__':
         # draw already done bounding boxes
         tmp_img, bbox = draw_bboxes_from_file(tmp_img, annotation_paths, width, height)
         
-        if is_next:
+        if is_next and to_track:
             # auto labeling
             # if tracker is enabled, there is not bbox in currect img and there is previous bbox
             # then run the tracker
             if args.auto_label and bbox is None and pre_bbox is not None:
+                if to_enhance:
+                    display_text('Image is enhanced.\nLabeled by tracker' + TRACKER_TYPE, 2000)
+                else:
+                    display_text('Labeled by tracker' + TRACKER_TYPE, 2000)
                 bbox_tracker = auto_labeling(pre_tmp_img, tmp_img, pre_bbox, height, width)
                 if bbox_tracker != None:
                     # write bbox to files
