@@ -16,6 +16,7 @@ from tqdm import tqdm
 from lxml import etree
 import xml.etree.cElementTree as ET
 
+from util.image_enhancer import *
 
 DELAY = 20 # keyboard delay (in milliseconds)
 WITH_QT = False
@@ -63,6 +64,7 @@ if TRACKER_TYPE == "DASIAMRPN":
 WINDOW_NAME    = 'OpenLabeling'
 TRACKBAR_IMG   = 'Image'
 TRACKBAR_CLASS = 'Class'
+TRACKBAR_ENHANCER = 'Enhance'
 
 annotation_formats = {'PASCAL_VOC' : '.xml', 'YOLO_darknet' : '.txt'}
 TRACKER_DIR = os.path.join(OUTPUT_DIR, '.tracker')
@@ -397,7 +399,6 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
         # Drawing bounding boxes from the YOLO files
         ann_path = next(path for path in annotation_paths if 'YOLO_darknet' in path)
     if os.path.isfile(ann_path):
-        is_annotation = True
         if DRAW_FROM_PASCAL:
             tree = ET.parse(ann_path)
             annotation = tree.getroot()
@@ -872,6 +873,11 @@ def json_file_add_object(frame_data_dict, img_path, anchor_id, pred_counter, obj
     return frame_data_dict
 
 
+def set_enhancer():
+    text = 'image is enhancer'
+    display_text(text, 1000)
+
+
 class LabelTracker():
     ''' Special thanks to Rafael Caballero Gonzalez '''
     # extract the OpenCV version info, e.g.:
@@ -1105,6 +1111,12 @@ if __name__ == '__main__':
     if last_class_index != 0:
         cv2.createTrackbar(TRACKBAR_CLASS, WINDOW_NAME, 0, last_class_index, set_class_index)
 
+    # grayscale
+    enhancer_on = 1
+    enhancer_off = 0
+    cv2.createTrackbar(TRACKBAR_ENHANCER, WINDOW_NAME,
+                    enhancer_off, enhancer_on, set_enhancer)
+
     # initialize
     set_img_index(0)
     edges_on = False
@@ -1120,6 +1132,11 @@ if __name__ == '__main__':
         # clone the img
         tmp_img = img.copy()
         height, width = tmp_img.shape[:2]
+
+        to_enhance = cv2.getTrackbarPos(TRACKBAR_ENHANCER, WINDOW_NAME)
+        if to_enhance == 1:
+            tmp_img = enhance_img(tmp_img)
+
         if edges_on == True:
             # draw edges
             tmp_img = draw_edges(tmp_img)
