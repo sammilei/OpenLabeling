@@ -1,4 +1,8 @@
 #!/bin/python
+'''
+how to run
+python3 main.py -i input_folder -o output_folder --draw-from-PASCAL-files --auto-label --tracker CSRT
+'''
 import argparse
 import glob
 import json
@@ -29,6 +33,8 @@ parser.add_argument('-i', '--input_dir', default='input', type=str, help='Path t
 parser.add_argument('-o', '--output_dir', default='output', type=str, help='Path to output directory')
 parser.add_argument('-t', '--thickness', default='1', type=int, help='Bounding box and cross line thickness')
 parser.add_argument('--draw-from-PASCAL-files', action='store_true', help='Draw bounding boxes from the PASCAL files') # default YOLO
+parser.add_argument('--auto-label', action='store_true', help='auto labeling')
+
 '''
 tracker_types = ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']
     Recomended tracker_type:
@@ -37,7 +43,7 @@ tracker_types = ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 
         CSRT -> More accurate than KCF but slightly slower (minimum OpenCV 3.4.2)
         MOSSE -> Less accurate than KCF but very fast (minimum OpenCV 3.4.1)
 '''
-parser.add_argument('--tracker', default='KCF', type=str, help="tracker_type being used: ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']")
+parser.add_argument('--tracker', default='CSRT', type=str, help="tracker_type being used: ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']")
 parser.add_argument('-n', '--n_frames', default='200', type=int, help='number of frames to track object for')
 args = parser.parse_args()
 
@@ -383,6 +389,7 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
     global img_objects#, is_bbox_selected, selected_bbox
     img_objects = []
     ann_path = None
+    bbox = None
     if DRAW_FROM_PASCAL:
         # Drawing bounding boxes from the PASCAL files
         ann_path = next(path for path in annotation_paths if 'PASCAL_VOC' in path)
@@ -390,6 +397,7 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
         # Drawing bounding boxes from the YOLO files
         ann_path = next(path for path in annotation_paths if 'YOLO_darknet' in path)
     if os.path.isfile(ann_path):
+        is_annotation = True
         if DRAW_FROM_PASCAL:
             tree = ET.parse(ann_path)
             annotation = tree.getroot()
@@ -398,6 +406,8 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
                 #print('{} {} {} {} {}'.format(class_index, xmin, ymin, xmax, ymax))
                 img_objects.append([class_index, xmin, ymin, xmax, ymax])
                 color = class_rgb[class_index].tolist()
+                # save bbox
+                bbox = [class_index, xmin, ymin, xmax, ymax]
                 # draw bbox
                 cv2.rectangle(tmp_img, (xmin, ymin), (xmax, ymax), color, LINE_THICKNESS)
                 # draw resizing anchors if the object is selected
@@ -415,6 +425,8 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
                     #print('{} {} {} {} {}'.format(class_index, xmin, ymin, xmax, ymax))
                     img_objects.append([class_index, xmin, ymin, xmax, ymax])
                     color = class_rgb[class_index].tolist()
+                    # save bbox
+                    bbox = [class_index, xmin, ymin, xmax, ymax]
                     # draw bbox
                     cv2.rectangle(tmp_img, (xmin, ymin), (xmax, ymax), color, LINE_THICKNESS)
                     # draw resizing anchors if the object is selected
@@ -423,7 +435,7 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
                             tmp_img = draw_bbox_anchors(tmp_img, xmin, ymin, xmax, ymax, color)
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     cv2.putText(tmp_img, class_name, (xmin, ymin - 5), font, 0.6, color, LINE_THICKNESS, cv2.LINE_AA)
-    return tmp_img
+    return tmp_img, bbox
 
 
 def get_bbox_area(x1, y1, x2, y2):
@@ -755,6 +767,7 @@ def create_PASCAL_VOC_xml(xml_path, abs_path, folder_name, image_name, img_heigh
 
 
 def save_bounding_box(annotation_paths, class_index, point_1, point_2, width, height):
+    print(point_1, point_2)
     for ann_path in annotation_paths:
         if '.txt' in ann_path:
             line = yolo_format(class_index, point_1, point_2, width, height)
@@ -966,6 +979,35 @@ def complement_bgr(color):
     k = lo + hi
     return tuple(k - u for u in color)
 
+
+def auto_labeling(pre_tmp, cur_tmp, pre_bbox, hei, wid):
+    print('in tracker!')
+    if TRACKER_TYPE == 'BOOSTING':
+        tracker = cv2.TrackerBoosting_create()
+    if TRACKER_TYPE == 'MIL':
+        tracker = cv2.TrackerMIL_create()
+    if TRACKER_TYPE == 'KCF':
+        tracker = cv2.TrackerKCF_create()
+    if TRACKER_TYPE == 'TLD':
+        tracker = cv2.TrackerTLD_create()
+    if TRACKER_TYPE == 'MEDIANFLOW':
+        tracker = cv2.TrackerMedianFlow_create()
+    if TRACKER_TYPE == 'GOTURN':
+        tracker = cv2.TrackerGOTURN_create()
+    if TRACKER_TYPE == 'MOSSE':
+        tracker = cv2.TrackerMOSSE_create()
+    if TRACKER_TYPE == "CSRT":
+        tracker = cv2.TrackerCSRT_create()
+
+    ok = tracker.init(pre_tmp, (pre_bbox[1], pre_bbox[2], pre_bbox[3], pre_bbox[4]))
+    ok, bbox = tracker.update(cur_tmp)
+    if ok:
+        bbox = [pre_bbox[0], bbox[0], bbox[1], bbox[2], bbox[3]]
+        return [int(i) for i in bbox]
+    else :
+        return None
+
+
 # change to the directory of this script
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -1069,6 +1111,9 @@ if __name__ == '__main__':
 
     display_text('Welcome!\n Press [h] for help.', 4000)
 
+    pre_tmp_img = None
+    pre_bbox = None
+    is_next = False
     # loop
     while True:
         color = class_rgb[class_index].tolist()
@@ -1094,7 +1139,21 @@ if __name__ == '__main__':
         if dragBBox.anchor_being_dragged is not None:
             dragBBox.handler_mouse_move(mouse_x, mouse_y)
         # draw already done bounding boxes
-        tmp_img = draw_bboxes_from_file(tmp_img, annotation_paths, width, height)
+        tmp_img, bbox = draw_bboxes_from_file(tmp_img, annotation_paths, width, height)
+        
+        if is_next:
+            # auto labeling
+            # if tracker is enabled, there is not bbox in currect img and there is previous bbox
+            # then run the tracker
+            if args.auto_label and bbox is None and pre_bbox is not None:
+                bbox_tracker = auto_labeling(pre_tmp_img, tmp_img, pre_bbox, height, width)
+                if bbox_tracker != None:
+                    # write bbox to files
+                    save_bounding_box(annotation_paths, bbox_tracker[0], (bbox_tracker[1], bbox_tracker[2]), (bbox_tracker[3], bbox_tracker[4]), width, height)
+                    # draw the bbox
+                    tmp_img, _ = draw_bboxes_from_file(tmp_img, annotation_paths, width, height)
+            is_next = False
+                    
         # if bounding box is selected add extra info
         if is_bbox_selected:
             tmp_img = draw_info_bb_selected(tmp_img)
@@ -1106,6 +1165,7 @@ if __name__ == '__main__':
             if point_2[0] != -1:
                 # save the bounding box
                 save_bounding_box(annotation_paths, class_index, point_1, point_2, width, height)
+                bbox = (point_1[0], point_1[1], point_2[0], point_2[1])
                 # reset the points
                 point_1 = (-1, -1)
                 point_2 = (-1, -1)
@@ -1122,7 +1182,11 @@ if __name__ == '__main__':
                 # show next image key listener
                 elif pressed_key == ord('d'):
                     img_index = increase_index(img_index, last_img_index)
+                    is_next = True
+                    pre_tmp_img = tmp_img
+                    pre_bbox = bbox
                 set_img_index(img_index)
+                   
                 cv2.setTrackbarPos(TRACKBAR_IMG, WINDOW_NAME, img_index)
             elif pressed_key == ord('s') or pressed_key == ord('w'):
                 # change down current class key listener

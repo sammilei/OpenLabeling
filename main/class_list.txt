@@ -1,3 +1,9 @@
-person
-billiard ball
-donut
+fire_extinguisher
+backpack
+drill
+manikin
+cellphone
+helmet
+rope
+
+
