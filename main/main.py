@@ -34,38 +34,34 @@ parser.add_argument('-i', '--input_dir', default='input', type=str, help='Path t
 parser.add_argument('-o', '--output_dir', default='output', type=str, help='Path to output directory')
 parser.add_argument('-t', '--thickness', default='1', type=int, help='Bounding box and cross line thickness')
 parser.add_argument('--draw-from-PASCAL-files', action='store_true', help='Draw bounding boxes from the PASCAL files') # default YOLO
-parser.add_argument('--auto-label', action='store_true', help='auto labeling')
 
-'''
-tracker_types = ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']
-    Recomended tracker_type:
+
+tracker_types = ['none', 'CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']
+'''    Recomended tracker_type:
         DASIAMRPN -> best
         KCF -> KCF is usually very good (minimum OpenCV 3.1.0)
         CSRT -> More accurate than KCF but slightly slower (minimum OpenCV 3.4.2)
         MOSSE -> Less accurate than KCF but very fast (minimum OpenCV 3.4.1)
 '''
-parser.add_argument('--tracker', default='CSRT', type=str, help="tracker_type being used: ['CSRT', 'KCF','MOSSE', 'MIL', 'BOOSTING', 'MEDIANFLOW', 'TLD', 'GOTURN', 'DASIAMRPN']")
 parser.add_argument('-n', '--n_frames', default='200', type=int, help='number of frames to track object for')
 args = parser.parse_args()
 
 class_index = 0
 img_index = 0
+tracker_index = 0
 img = None
 img_objects = []
 
 INPUT_DIR  = args.input_dir
 OUTPUT_DIR = args.output_dir
 N_FRAMES   = args.n_frames
-TRACKER_TYPE = args.tracker
 
-if TRACKER_TYPE == "DASIAMRPN":
-    from dasiamrpn import dasiamrpn
 
 WINDOW_NAME    = 'OpenLabeling'
 TRACKBAR_IMG   = 'Image'
 TRACKBAR_CLASS = 'Class'
 TRACKBAR_ENHANCER = 'Enhance'
-TRACKBAR_TRACKER = 'Track'
+TRACKBAR_TRACKER = 'Tracker'
 
 annotation_formats = {'PASCAL_VOC' : '.xml', 'YOLO_darknet' : '.txt'}
 TRACKER_DIR = os.path.join(OUTPUT_DIR, '.tracker')
@@ -347,6 +343,7 @@ def get_txt_object_data(obj, img_width, img_height):
     centerX = float(centerX)
     centerY = float(centerY)
 
+    classId = classId.replace('\x00', '')
     class_index = int(classId)
     class_name = CLASS_LIST[class_index]
     xmin = int(img_width * centerX - img_width * bbox_width/2.0)
@@ -879,9 +876,11 @@ def set_enhancer():
     display_text(text, 1000)
 
 
-def set_Tracker():
-    text = 'Tracker is ON'
-    display_text(text, 1000)
+def set_Tracker_index(x):
+    global tracker_index, last_tracker_index
+    tracker_index = x
+    text = 'Selected tracker {}/{} -> {}'.format(str(tracker_index), str(last_tracker_index), tracker_types[tracker_index])
+    display_text(text, 3000)
 
 class LabelTracker():
     ''' Special thanks to Rafael Caballero Gonzalez '''
@@ -992,24 +991,29 @@ def complement_bgr(color):
 
 
 
-def auto_labeling(tracker, pre_tmp, cur_tmp, pre_bbox, hei, wid):
-    print('in tracker!')
-    if TRACKER_TYPE == 'BOOSTING':
+def auto_labeling(pre_tmp, cur_tmp, pre_bbox, hei, wid):
+    print('in tracker:', tracker_types[tracker_index])
+    print(pre_bbox)
+    tracker_type = tracker_types[tracker_index]
+    if tracker_type == 'BOOSTING':
         tracker = cv2.TrackerBoosting_create()
-    if TRACKER_TYPE == 'MIL':
+    elif tracker_type == 'MIL':
         tracker = cv2.TrackerMIL_create()
-    if TRACKER_TYPE == 'KCF':
+    elif tracker_type == 'KCF':
         tracker = cv2.TrackerKCF_create()
-    if TRACKER_TYPE == 'TLD':
+    elif tracker_type == 'TLD':
         tracker = cv2.TrackerTLD_create()
-    if TRACKER_TYPE == 'MEDIANFLOW':
+    elif tracker_type == 'MEDIANFLOW':
         tracker = cv2.TrackerMedianFlow_create()
-    if TRACKER_TYPE == 'GOTURN':
+    elif tracker_type == 'GOTURN':
         tracker = cv2.TrackerGOTURN_create()
-    if TRACKER_TYPE == 'MOSSE':
+    elif tracker_type == 'MOSSE':
         tracker = cv2.TrackerMOSSE_create()
-    if TRACKER_TYPE == "CSRT":
+    elif tracker_type == "CSRT":
         tracker = cv2.TrackerCSRT_create()
+    else:
+        print("no tracker.")
+        return None
 
     ok = tracker.init(pre_tmp, (pre_bbox[1], pre_bbox[2], pre_bbox[3], pre_bbox[4]))
     ok, bbox = tracker.update(cur_tmp)
@@ -1123,11 +1127,10 @@ if __name__ == '__main__':
     cv2.createTrackbar(TRACKBAR_ENHANCER, WINDOW_NAME,
                     enhancer_off, enhancer_on, set_enhancer)
     
-    # Tracker
-    tracker_on = 1
-    tracker_off = 0
+    # Selected trakcer
+    last_tracker_index = len(tracker_types)- 1
     cv2.createTrackbar(TRACKBAR_TRACKER, WINDOW_NAME,
-                    tracker_off, tracker_on, set_Tracker)
+                    0, last_tracker_index, set_Tracker_index)
 
     # initialize
     set_img_index(0)
@@ -1149,8 +1152,6 @@ if __name__ == '__main__':
         to_enhance = cv2.getTrackbarPos(TRACKBAR_ENHANCER, WINDOW_NAME)
         if to_enhance == 1:
             tmp_img = enhance_img(tmp_img)
-            display_text('image is enhanced', 1000)
-
 
         if edges_on == True:
             # draw edges
@@ -1177,11 +1178,11 @@ if __name__ == '__main__':
             # auto labeling
             # if tracker is enabled, there is not bbox in currect img and there is previous bbox
             # then run the tracker
-            if args.auto_label and bbox is None and pre_bbox is not None:
+            if bbox is None and pre_bbox is not None:
                 if to_enhance:
-                    display_text('Image is enhanced.\nLabeled by tracker' + TRACKER_TYPE, 2000)
+                    display_text('Image is enhanced.\nLabeled by tracker' + tracker_types[tracker_index], 2000)
                 else:
-                    display_text('Labeled by tracker' + TRACKER_TYPE, 2000)
+                    display_text('Labeled by tracker' + tracker_types[tracker_index], 2000)
                 bbox_tracker = auto_labeling(pre_tmp_img, tmp_img, pre_bbox, height, width)
                 if bbox_tracker != None:
                     # write bbox to files

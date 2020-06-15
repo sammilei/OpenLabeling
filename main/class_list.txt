@@ -1,7 +1,7 @@
 fire_extinguisher
 backpack
 drill
-manikin
+survivor
 cellphone
 helmet
 rope
